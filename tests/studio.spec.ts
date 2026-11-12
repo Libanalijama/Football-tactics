@@ -120,6 +120,13 @@ test("position keyframes animate player movement and scenes keep independent edi
   const player = board(page).locator("[data-player-id]").first();
   const start = await player.getAttribute("transform");
   await page
+    .locator(".timeline-actions")
+    .getByRole("button", { name: "Add scene", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Scene 1: Scene 1", exact: true })
+    .click();
+  await page
     .getByRole("button", { name: "Add position keyframe", exact: true })
     .click();
   await timeline(page, 4);
@@ -146,11 +153,11 @@ test("position keyframes animate player movement and scenes keep independent edi
     .getByRole("button", { name: "Pause animation", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Scene 2: Beat the press", exact: true })
+    .getByRole("button", { name: "Scene 2: Scene 2", exact: true })
     .click();
   await expect(page.locator(".frame-count")).toHaveText("0 KEYFRAMES");
   await page
-    .getByRole("button", { name: "Scene 1: The build-up", exact: true })
+    .getByRole("button", { name: "Scene 1: Scene 1", exact: true })
     .click();
   await expect(page.locator(".frame-count")).toHaveText("2 KEYFRAMES");
 });
@@ -222,11 +229,11 @@ test("still media is stored locally, can be annotated, and reaches clean output"
     bounds!.x + bounds!.width * 0.5,
     bounds!.y + bounds!.height * 0.5,
   );
-  await expect(board(page).locator("[data-annotation-id]")).toHaveCount(4);
+  await expect(board(page).locator("[data-annotation-id]")).toHaveCount(1);
   await page.waitForTimeout(700);
   await page.reload();
   await expect(image).toBeVisible();
-  await expect(board(page).locator("[data-annotation-id]")).toHaveCount(4);
+  await expect(board(page).locator("[data-annotation-id]")).toHaveCount(1);
   await page.getByRole("button", { name: "Take live", exact: true }).click();
   const output = await context.newPage();
   await output.goto("/output");
@@ -292,13 +299,11 @@ test("unsupported video shows an operator error and leaves clean output black", 
   page,
   context,
 }) => {
-  await page
-    .getByLabel("Upload analysis media")
-    .setInputFiles({
-      name: "unsupported.mp4",
-      mimeType: "video/mp4",
-      buffer: Buffer.from("not a playable media file"),
-    });
+  await page.getByLabel("Upload analysis media").setInputFiles({
+    name: "unsupported.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from("not a playable media file"),
+  });
   await expect(page.getByRole("alert")).toContainText("cannot be played");
   await page.getByRole("button", { name: "Take live", exact: true }).click();
   const output = await context.newPage();

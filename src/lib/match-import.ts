@@ -112,6 +112,7 @@ export function importOfficialMatch(
     keyframes: [],
     background: "pitch",
     mediaTime: 0,
+    showNames: true,
     sourceMatchId: match.id,
   };
   return result;

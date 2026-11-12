@@ -19,7 +19,7 @@ Verified on 12 November 2026 using Node.js 24 and desktop Chrome.
 | Animated video export                   | Browser test creates player keyframes at 0 and 1 second, records WebM, decodes the result at 1200 × 780 and checks that the first and later frames differ.                                                                                |
 | Original-media reattachment             | Browser test removes the local video blob, reloads the missing-media project, reuploads the original and verifies asset identity, deduplicated metadata and the saved frozen frame are preserved.                                         |
 
-Current recorded result: **63 unit tests and 11 browser tests passed**.
+Current recorded result: **101 unit tests and 25 browser tests passed**.
 
 The six operator/broadcast browser tests additionally verify:
 
@@ -61,3 +61,9 @@ Manual tactical scenarios are labeled as manual. Missing or unconfigured footbal
 - Programme output and presenter controls coordinate within the same origin and browser on one computer. Cross-device studio control is outside this release.
 - WebM exports are silent, real-time browser recordings. Image exports include the current video frame. Supported codecs depend on the browser.
 - Browser storage can be cleared or evicted. Keep exported project backups and the original media files.
+
+## Football actions, key-free discovery and media editing update
+
+The full update passed 101 unit tests and 25 browser workflows. Added coverage includes nearby EPL discovery and source switching without a session, reported XI import, role-aware blocks and measured unit movement, ball carrying through manual steps and reload, unnamed clean defaults, player-off/player-on substitutions, fullscreen tools/uploads, picture corner resizing/panning and saved transforms, and studio-to-PNG pixel agreement for contain and fill modes.
+
+Live upstream checks through the local public-data route returned 10 EPL fixtures for 5–19 November 2026; ESPN match 401879244 supplied 11 starters and 9 substitutes per side, formations and match events. The explicit CC0 fixture source also returned 10 fixtures for that range. No key or studio session was used. ESPN remains subject to its source terms, while the CC0 option supplies fixture/results data without lineups. Manual heat zones are editorial annotations and do not claim tracking statistics.

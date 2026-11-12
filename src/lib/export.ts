@@ -1,4 +1,5 @@
-import type { Project } from "../types";
+import type { Project, MediaTransform } from "../types";
+import { mediaPlacement, normalizeMediaTransform } from "./media-transform";
 import { validateProject } from "./validation";
 
 const filename = (value: string, extension: string) =>
@@ -113,6 +114,7 @@ function drawMedia(
   media: HTMLImageElement | HTMLVideoElement,
   width: number,
   height: number,
+  transform?: MediaTransform,
 ): void {
   const sourceWidth =
     media instanceof HTMLVideoElement ? media.videoWidth : media.naturalWidth;
@@ -120,28 +122,48 @@ function drawMedia(
     media instanceof HTMLVideoElement ? media.videoHeight : media.naturalHeight;
   if (!sourceWidth || !sourceHeight)
     throw new Error("Wait for the media to load before exporting.");
-  const scale = Math.min(width / sourceWidth, height / sourceHeight);
-  const drawWidth = sourceWidth * scale,
-    drawHeight = sourceHeight * scale;
-  context.drawImage(
-    media,
-    (width - drawWidth) / 2,
-    (height - drawHeight) / 2,
-    drawWidth,
-    drawHeight,
+  let current = transform;
+  if (!current && media.dataset.mediaTransform) {
+    try {
+      current = normalizeMediaTransform(
+        JSON.parse(media.dataset.mediaTransform),
+      );
+    } catch {
+      /* Fall back to centered media. */
+    }
+  }
+  const placement = mediaPlacement(
+    { width: sourceWidth, height: sourceHeight },
+    { width, height },
+    current,
   );
+  context.save();
+  try {
+    context.translate(placement.center.x, placement.center.y);
+    context.rotate((placement.transform.rotation * Math.PI) / 180);
+    context.drawImage(
+      media,
+      -placement.width / 2,
+      -placement.height / 2,
+      placement.width,
+      placement.height,
+    );
+  } finally {
+    context.restore();
+  }
 }
 async function drawFrame(
   context: CanvasRenderingContext2D,
   svg: SVGSVGElement,
   media?: HTMLImageElement | HTMLVideoElement,
+  mediaTransform?: MediaTransform,
 ): Promise<void> {
   const { xml, width, height } = serialized(svg);
   const image = await imageFromSvg(xml);
   context.clearRect(0, 0, width, height);
-  context.fillStyle = "#080c10";
+  context.fillStyle = media ? "#000" : "#080c10";
   context.fillRect(0, 0, width, height);
-  if (media) drawMedia(context, media, width, height);
+  if (media) drawMedia(context, media, width, height, mediaTransform);
   context.drawImage(image, 0, 0, width, height);
 }
 export function exportBoardSvg(svg: SVGSVGElement, name: string): void {
@@ -155,6 +177,7 @@ export async function exportBoardPng(
   svg: SVGSVGElement,
   name: string,
   media?: HTMLImageElement | HTMLVideoElement,
+  mediaTransform?: MediaTransform,
 ): Promise<void> {
   if (media) await waitForMedia(media);
   const { width, height } = serialized(svg);
@@ -164,7 +187,7 @@ export async function exportBoardPng(
   const context = canvas.getContext("2d");
   if (!context) throw new Error("This browser cannot export images.");
   context.scale(2, 2);
-  await drawFrame(context, svg, media);
+  await drawFrame(context, svg, media, mediaTransform);
   const blob = await new Promise<Blob>((resolve, reject) => {
     try {
       canvas.toBlob(
@@ -182,6 +205,7 @@ export interface RecordingOptions {
   duration: number;
   onFrame: (time: number) => void;
   mediaElement?: HTMLImageElement | HTMLVideoElement;
+  mediaTransform?: MediaTransform;
   fps?: number;
   signal?: AbortSignal;
   onProgress?: (progress: number) => void;
@@ -260,7 +284,7 @@ export async function recordBoardWebm(
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => resolve()),
     );
-    await drawFrame(context, svg, options.mediaElement);
+    await drawFrame(context, svg, options.mediaElement, options.mediaTransform);
     if (options.signal?.aborted) throw new Error("Video export cancelled.");
     recorder.start(200);
     const started = performance.now();
@@ -277,7 +301,12 @@ export async function recordBoardWebm(
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => resolve()),
         );
-        await drawFrame(context, svg, options.mediaElement);
+        await drawFrame(
+          context,
+          svg,
+          options.mediaElement,
+          options.mediaTransform,
+        );
         options.onProgress?.(time / options.duration);
         if (time >= options.duration) {
           recorder.stop();

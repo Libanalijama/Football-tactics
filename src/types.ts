@@ -8,8 +8,13 @@ export type Tool =
   | "zone"
   | "ellipse"
   | "highlight"
+  | "heat"
+  | "cone"
+  | "link"
+  | "distance"
   | "text"
-  | "erase";
+  | "erase"
+  | "media";
 export type TeamSide = "home" | "away";
 export interface Player extends Point {
   id: string;
@@ -22,7 +27,7 @@ export interface Player extends Point {
 }
 export interface Annotation {
   id: string;
-  type: Exclude<Tool, "select" | "erase">;
+  type: Exclude<Tool, "select" | "erase" | "media">;
   points: Point[];
   color: string;
   width: number;
@@ -32,6 +37,27 @@ export interface Keyframe {
   id: string;
   time: number;
   positions: Record<string, Point>;
+  ball?: Point;
+  ballCarrierId?: string;
+}
+export interface TacticalState {
+  activeTeam: TeamSide;
+  showShape: boolean;
+  showDistances: boolean;
+  showTrails: boolean;
+  showLines: boolean;
+  showBall: boolean;
+  ball: Point & { carrierId?: string };
+  formation?: string;
+  block?: "low" | "mid" | "high" | "build-out" | "custom";
+  lineGroups?: string[][];
+}
+export interface MediaTransform {
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  fit: "contain" | "cover";
 }
 export interface MediaAsset {
   id: string;
@@ -50,6 +76,7 @@ export interface Scene {
   duration: number;
   mediaId?: string;
   mediaTime: number;
+  mediaTransform?: MediaTransform;
   background: "pitch" | "media";
   pitchTheme: "stadium" | "midnight";
   showNames: boolean;
@@ -58,6 +85,7 @@ export interface Scene {
   camera: "full" | "half";
   notes: string;
   sourceMatchId?: string;
+  tactics?: TacticalState;
 }
 export interface TeamSettings {
   name: string;

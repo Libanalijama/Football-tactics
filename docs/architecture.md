@@ -68,7 +68,7 @@ This transport works between windows of the **same origin, browser profile and d
 
 ## Authentication and server configuration
 
-Server features are disabled when `STUDIO_PASSWORD` is absent. Login compares the submitted password using constant-time byte comparison, signs a random twelve-hour bearer token with HMAC-SHA256 and returns an HttpOnly, SameSite=Strict cookie, marked Secure for HTTPS/Vercel. Verification checks bounded syntax, signature and absolute expiry. Rotating the configured password invalidates previous cookies.
+Private cloud and credentialed-provider features are disabled when `STUDIO_PASSWORD` is absent. Login compares the submitted password using constant-time byte comparison, signs a random twelve-hour bearer token with HMAC-SHA256 and returns an HttpOnly, SameSite=Strict cookie, marked Secure for HTTPS/Vercel. Verification checks bounded syntax, signature and absolute expiry. Rotating the configured password invalidates previous cookies.
 
 Authenticated API requests also enforce same-origin checks; writes without an Origin header are rejected. Public status endpoints expose configuration booleans, not secrets. The football route validates allowlisted filters, fixed provider origin/paths, request timeout and per-instance request limits. Provider errors are translated to useful messages without returning upstream bodies or credentials. Cloud mutations validate the project document before writing it.
 
@@ -76,16 +76,24 @@ The shared password is appropriate for a single trusted production workspace. It
 
 ## Build, deployment and verification
 
-Vite builds the browser bundle; `api/` functions are deployed by Vercel separately. `npm run dev` starts only Vite, so cloud/data endpoints require `vercel dev` or a deployed Vercel project. No runtime secret uses a `VITE_` prefix. The app should be deployed under the requested repository's own Vercel project; no other repository is used for source or delivery.
+Vite builds the browser bundle; `api/` functions are deployed by Vercel separately. `npm run dev` starts only Vite, so cloud/data endpoints require `vercel dev` or a deployed Vercel project. No runtime secret uses a `VITE_` prefix. The public match route also runs in Vite development; cloud/session routes require Vercel. The app should be deployed under the requested repository's own Vercel project; no other repository is used for source or delivery.
 
 Tests separate deterministic renderer/animation contracts, strict persistence/import boundaries, provider failure semantics, cookie/origin authorization and browser production workflows. TypeScript checks browser and server code during a production build. Browser-generated PNG/WebM output, deployed private-store permissions, licensed provider coverage and the full broadcaster capture chain require environment-specific validation.
 
 ## Current limits
 
-- No football provider account or broadcast/image rights are bundled; live data requires licensed credentials. Only API-Football has an implemented adapter.
+- No football provider account or broadcast/image rights are bundled; live data requires licensed credentials. The default browser now uses key-free ESPN and explicit Openfootball CC0 adapters. The optional credentialed API-Football adapter is retained.
 - Local-first project/media storage and authenticated private cloud project snapshots are implemented. Cross-device source media sync, multi-user editing, conflict resolution and relational project search are not.
 - Programme transport is same-browser, and the operator window remains the command authority. There is no remote presenter session or external switching protocol.
 - Telestration is manual. Automatic player tracking, video segmentation, camera calibration and AI analysis are not included.
-- Movement interpolation is supported; annotation path animation, complex camera moves, tracking heatmaps and advanced timeline compositing are not.
+- Football shapes, measured unit movements, player runs, ball carries/passes, automatic action keyframes and dynamic shape/line/distance/trail overlays are supported. Complex camera moves, tracking heatmaps and advanced timeline compositing are not.
 - SVG/PNG/project export and browser WebM recording are supported where the browser permits. Audio mixing, server render queues, ProRes/H.264 delivery guarantees and archival media packaging are not included.
 - The initial build needs real production rehearsal and performance measurements with the intended footage, scene sizes, browser and capture hardware before being treated as a broadcast reliability guarantee.
+
+## Key-free match browser and football actions update
+
+The public-football API runs without a studio session or API credentials. ESPN public endpoints provide reported team sheets and benches; Openfootball is an explicit CC0 fixture/results option and fallback. Neither source fabricates unavailable lineups. The optional credentialed route is separate from this default browser. Vite includes the public route locally.
+
+Football actions create role-aware block positions and measured unit translations with automatic before/end keyframes. Ball possession and passing are interpolated alongside players. The overlay renderer calculates team hulls, defensive groups and distances on a 105 by 68 metre pitch. Substitutions transfer playing positions, defensive-group membership and ball routes without altering official records.
+
+Picture transforms share fit/fill, translation, scale and rotation between the board, clean output and raster/video exports. Studio fullscreen retains the operator controls, while clean programme output stays separate. New projects have one numbered scene and unnamed manual player tokens; no invented names or demonstration artwork are supplied.

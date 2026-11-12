@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   ArrowDownToLine,
+  ArrowLeftRight,
+  Network,
+  Ruler,
+  Triangle,
+  Footprints,
   ArrowRight,
   ArrowUpRight,
   ArrowUpRightFromSquare,
@@ -19,6 +24,7 @@ import {
   Expand,
   Eye,
   Film,
+  Flame,
   FolderOpen,
   Grid2X2,
   HelpCircle,
@@ -60,14 +66,18 @@ import type {
   Player,
 } from "./types";
 import { Board } from "./components/Board";
+import { FootballActions } from "./components/FootballActions";
+import { MediaControls } from "./components/MediaControls";
+import { SubstitutionDialog } from "./components/SubstitutionDialog";
+import "./studio-updates.css";
 import { SceneCard } from "./components/SceneCard";
 import { CloudProjects } from "./components/CloudProjects";
 import { importOfficialMatch } from "./lib/match-import";
 import { Modal } from "./components/Modal";
 import { MatchHub } from "./components/MatchHub";
-import { createProject, uid } from "./lib/defaults";
+import { createProject, removeDemoContent, uid } from "./lib/defaults";
 import { FORMATIONS, applyFormation } from "./lib/formations";
-import { playersAtTime } from "./lib/animation";
+import { playersAtTime, ballAtTime } from "./lib/animation";
 import {
   saveProject,
   loadProject,
@@ -88,9 +98,10 @@ import {
   subscribeProgram,
 } from "./lib/broadcast";
 
-type Panel = "lineup" | "scene" | "layers";
+type Panel = "lineup" | "actions" | "scene" | "layers";
 type Dialog =
   | "match"
+  | "substitution"
   | "media"
   | "projects"
   | "export"
@@ -113,7 +124,11 @@ const TOOLS: Array<{ id: Tool; label: string; key: string; icon: LucideIcon }> =
     { id: "zone", label: "Tactical zone", key: "Z", icon: Square },
     { id: "ellipse", label: "Ellipse", key: "O", icon: Circle },
     { id: "highlight", label: "Spotlight", key: "H", icon: Target },
+    { id: "heat", label: "Heat zone (manual)", key: "U", icon: Flame },
     { id: "text", label: "Text label", key: "T", icon: Type },
+    { id: "cone", label: "Vision cone", key: "N", icon: Triangle },
+    { id: "link", label: "Linked shape", key: "L", icon: Network },
+    { id: "distance", label: "Measure distance", key: "M", icon: Ruler },
   ];
 const COLORS = [
   "#c6f36b",
@@ -160,7 +175,7 @@ export function App() {
   const [color, setColor] = useState(COLORS[0]);
   const [width, setWidth] = useState(3);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [panel, setPanel] = useState<Panel>("lineup");
+  const [panel, setPanel] = useState<Panel>("actions");
   const [side, setSide] = useState<TeamSide>("home");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [toast, setToast] = useState("");
@@ -219,7 +234,7 @@ export function App() {
     loadProject()
       .then((saved) => {
         if (mounted) {
-          if (saved) setProject(saved);
+          if (saved) setProject(removeDemoContent(saved));
           setLoaded(true);
           loadedRef.current = true;
         }
@@ -297,7 +312,7 @@ export function App() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing, scene.duration]);
+  }, [playing, scene.duration, scene.keyframes]);
   useEffect(() => {
     const el = video.current;
     if (!el) return;
@@ -472,7 +487,7 @@ export function App() {
     const next = structuredClone(scene);
     next.id = uid();
     next.name = `Scene ${project.scenes.length + 1}`;
-    next.subtitle = "Tactical analysis";
+    next.subtitle = "";
     updateProject((p) => ({
       ...p,
       scenes: [...p.scenes, next],
@@ -497,23 +512,36 @@ export function App() {
     setPlaying(false);
     history.current = { past: [], future: [] };
   }
+  function captureFrame(
+    current: Scene,
+    at: number,
+    players = playersAtTime(current, at),
+  ) {
+    const ball = ballAtTime(current, at, players);
+    return {
+      id: uid(),
+      time: at,
+      positions: Object.fromEntries(
+        players.map((p) => [p.id, { x: p.x, y: p.y }]),
+      ),
+      ball: { x: ball.x, y: ball.y },
+      ...(ball.carrierId ? { ballCarrierId: ball.carrierId } : {}),
+    };
+  }
   function boardChange(next: Scene) {
     const moved = next.players.some(
       (p, i) => p.x !== scene.players[i]?.x || p.y !== scene.players[i]?.y,
     );
-    if (moved && scene.keyframes.length) {
-      const t = Math.round(time * 10) / 10;
-      const frame = {
-        id: uid(),
-        time: t,
-        positions: Object.fromEntries(
-          next.players.map((p) => [p.id, { x: p.x, y: p.y }]),
-        ),
-      };
+    if (moved && (scene.keyframes.length || time > 0)) {
+      const at = Math.round(time * 10) / 10;
+      const frame = captureFrame({ ...next, keyframes: [] }, at, next.players);
       next = {
         ...next,
         keyframes: [
-          ...next.keyframes.filter((f) => Math.abs(f.time - t) > 0.05),
+          ...(!next.keyframes.length && at > 0
+            ? [captureFrame({ ...scene, keyframes: [] }, 0, scene.players)]
+            : []),
+          ...next.keyframes.filter((f) => Math.abs(f.time - at) > 0.05),
           frame,
         ].sort((a, b) => a.time - b.time),
       };
@@ -542,15 +570,94 @@ export function App() {
         ),
       });
   }
+  function addSubstitute() {
+    if (scene.players.length >= 80)
+      return notify("A scene supports up to 80 players.");
+    const used = new Set(roster.map((p) => p.number));
+    const number =
+      Array.from({ length: 99 }, (_, i) => i + 1).find(
+        (value) => !used.has(value),
+      ) ?? 0;
+    const player: Player = {
+      id: uid(),
+      team: side,
+      number,
+      name: "",
+      role: "MID",
+      onPitch: false,
+      x: 50,
+      y: 50,
+    };
+    patchScene({ players: [...scene.players, player] });
+    setSelectedId(player.id);
+    setDialog(null);
+    setPanel("lineup");
+  }
+  function nextMovementStep() {
+    setPlaying(false);
+    const nextTime = Math.min(120, Math.round((time + 2) * 10) / 10);
+    const initial = scene.keyframes.length
+      ? scene.keyframes
+      : [captureFrame(scene, 0)];
+    patchScene({
+      keyframes: initial,
+      duration: Math.max(scene.duration, nextTime),
+    });
+    setTime(nextTime);
+    setTool("select");
+    notify(
+      "Move players to their next position. The movement is recorded automatically.",
+    );
+  }
+  function applyFootballAction(next: Scene) {
+    changeScene(next);
+    if (next.tactics?.formation) {
+      const target = next.tactics.activeTeam;
+      updateProject((p) => ({
+        ...p,
+        [target]: { ...p[target], formation: next.tactics!.formation! },
+      }));
+    }
+  }
   function substitute(outId: string, inId: string) {
     const outgoing = scene.players.find((p) => p.id === outId);
     if (!outgoing) return;
     patchScene({
+      ...(scene.tactics
+        ? {
+            tactics: {
+              ...scene.tactics,
+              ball: {
+                ...scene.tactics.ball,
+                ...(scene.tactics.ball.carrierId === outId
+                  ? { carrierId: inId }
+                  : {}),
+              },
+              lineGroups: scene.tactics.lineGroups?.map((group) =>
+                group.map((id) => (id === outId ? inId : id)),
+              ),
+            },
+          }
+        : {}),
+      keyframes: scene.keyframes.map((frame) => ({
+        ...frame,
+        positions: {
+          ...frame.positions,
+          [inId]: frame.positions[outId] ?? { x: outgoing.x, y: outgoing.y },
+        },
+        ...(frame.ballCarrierId === outId ? { ballCarrierId: inId } : {}),
+      })),
       players: scene.players.map((p) =>
         p.id === outId
           ? { ...p, onPitch: false }
           : p.id === inId
-            ? { ...p, onPitch: true, x: outgoing.x, y: outgoing.y }
+            ? {
+                ...p,
+                onPitch: true,
+                x: outgoing.x,
+                y: outgoing.y,
+                role: outgoing.role,
+              }
             : p,
       ),
     });
@@ -567,13 +674,7 @@ export function App() {
   }
   function addKeyframe() {
     const t = Math.round(time * 10) / 10;
-    const frame = {
-      id: uid(),
-      time: t,
-      positions: Object.fromEntries(
-        playersAtTime(scene, time).map((p) => [p.id, { x: p.x, y: p.y }]),
-      ),
-    };
+    const frame = captureFrame(scene, t);
     patchScene({
       keyframes: [
         ...scene.keyframes.filter((f) => Math.abs(f.time - t) > 0.05),
@@ -649,11 +750,14 @@ export function App() {
                 mediaId: saved[0].id,
                 background: "media",
                 mediaTime: s.mediaId === saved[0].id ? s.mediaTime : 0,
+                mediaTransform:
+                  s.mediaId === saved[0].id ? s.mediaTransform : undefined,
               }
             : s,
         ),
       }));
       setMediaRevision((value) => value + 1);
+      setTool("media");
       setDialog(null);
       setPlaying(false);
       setTime(0);
@@ -672,7 +776,7 @@ export function App() {
     try {
       if (file.size > 25 * 1024 * 1024)
         throw new Error("Project files must be smaller than 25 MB.");
-      const next = parseProject(await file.text());
+      const next = removeDemoContent(parseProject(await file.text()));
       await saveProject(project);
       setProject(next);
       setDialog(null);
@@ -803,7 +907,12 @@ export function App() {
         exporters.downloadProject(project);
         notify("Project exported. Media files stay in your local library.");
       } else if (kind === "png") {
-        await exporters.exportBoardPng(svg!, scene.name, media);
+        await exporters.exportBoardPng(
+          svg!,
+          scene.name,
+          media,
+          scene.mediaTransform,
+        );
         notify("High-resolution still exported.");
       } else if (kind === "svg") {
         if (scene.background === "media")
@@ -824,6 +933,7 @@ export function App() {
             duration: scene.duration,
             onFrame: (t) => flushSync(() => setTime(t)),
             mediaElement: media,
+            mediaTransform: scene.mediaTransform,
             fps: 30,
             signal: cancelRecording.current.signal,
             onProgress: setRecordProgress,
@@ -999,8 +1109,11 @@ export function App() {
             </button>
             <ToolButton
               icon={Expand}
-              label="Expand board"
-              onClick={() => boardContainer.current?.requestFullscreen?.()}
+              label="Fullscreen studio"
+              onClick={() => {
+                if (document.fullscreenElement) void document.exitFullscreen();
+                else void document.documentElement.requestFullscreen?.();
+              }}
             />
           </div>
         </div>
@@ -1094,7 +1207,9 @@ export function App() {
                   onSelect={(id) => {
                     setSelectedId(id);
                     if (scene.players.some((p) => p.id === id)) {
-                      setPanel("lineup");
+                      setPanel((current) =>
+                        current === "actions" ? "actions" : "lineup",
+                      );
                       const player = scene.players.find((p) => p.id === id);
                       if (player) setSide(player.team);
                     }
@@ -1111,8 +1226,10 @@ export function App() {
                   <span className="lime-dot" />{" "}
                   {tool === "select"
                     ? "Drag players to shape the game"
-                    : (TOOLS.find((t) => t.id === tool)?.label ??
-                      "Click an annotation to erase")}
+                    : tool === "media"
+                      ? "Drag the picture or a corner handle"
+                      : (TOOLS.find((t) => t.id === tool)?.label ??
+                        "Click an annotation to erase")}
                 </span>
                 <span>
                   {scene.background === "media"
@@ -1184,6 +1301,13 @@ export function App() {
             </div>
           </div>
         </div>
+        <MediaControls
+          scene={scene}
+          onChange={(patch) => patchScene(patch)}
+          onUpload={() => setDialog("media")}
+          onToolChange={setTool}
+          tool={tool}
+        />
         {scene.background === "media" && asset?.kind === "video" ? (
           <div className="clip-controls">
             <Video size={16} />
@@ -1216,6 +1340,7 @@ export function App() {
               className="button small"
               onClick={() => {
                 video.current?.pause();
+                setPlaying(false);
                 patchScene({ mediaTime: video.current?.currentTime ?? 0 });
                 notify("Frame frozen and saved to this scene.");
               }}
@@ -1234,8 +1359,8 @@ export function App() {
               </span>
             </div>
             <div className="timeline-actions">
-              <button className="text-button" onClick={addKeyframe}>
-                <Plus size={13} /> Position keyframe
+              <button className="text-button" onClick={nextMovementStep}>
+                <Plus size={13} /> Movement step
               </button>
               <span className="separator">|</span>
               <button className="text-button" onClick={addScene}>
@@ -1346,21 +1471,50 @@ export function App() {
       </main>
       <aside className="inspector">
         <div className="inspector-tabs">
-          {(["lineup", "scene", "layers"] as const).map((item) => (
+          {(["lineup", "actions", "scene", "layers"] as const).map((item) => (
             <button
               key={item}
               className={panel === item ? "active" : ""}
               onClick={() => setPanel(item)}
             >
               {item === "lineup"
-                ? "Teams & players"
-                : item === "scene"
-                  ? "Scene"
-                  : "Layers"}
+                ? "Squad"
+                : item === "actions"
+                  ? "Actions"
+                  : item === "scene"
+                    ? "Scene"
+                    : "Layers"}
             </button>
           ))}
         </div>
         <div className="inspector-body">
+          {panel === "actions" ? (
+            <>
+              <div className="team-switch">
+                {(["home", "away"] as const).map((value) => (
+                  <button
+                    key={value}
+                    className={side === value ? "active" : ""}
+                    onClick={() => {
+                      setSide(value);
+                      setSelectedId(null);
+                    }}
+                  >
+                    <span style={{ background: project[value].color }} />
+                    {project[value].shortName}
+                  </button>
+                ))}
+              </div>
+              <FootballActions
+                scene={{ ...scene, players: playersAtTime(scene, time) }}
+                side={side}
+                selectedPlayerId={selectedPlayer?.id}
+                onChange={applyFootballAction}
+                onTimeChange={setTime}
+                onPlay={() => setPlaying(true)}
+              />
+            </>
+          ) : null}
           {panel === "lineup" ? (
             <>
               <div className="inspector-section-header">
@@ -1474,43 +1628,62 @@ export function App() {
               </div>
               <div className="player-list">
                 {onPitch.map((p) => (
-                  <button
-                    className={`player-row ${selectedId === p.id ? "selected" : ""}`}
-                    key={p.id}
-                    onClick={() => {
-                      setSelectedId(p.id);
-                      setTool("select");
-                    }}
-                  >
-                    <span
-                      className="shirt-number"
-                      style={{
-                        color: p.role === "GK" ? "#f5c866" : team.color,
+                  <div className="player-line" key={p.id}>
+                    <button
+                      className={`player-row ${selectedId === p.id ? "selected" : ""}`}
+                      onClick={() => {
+                        setSelectedId(p.id);
+                        setTool("select");
                       }}
                     >
-                      {p.number || "–"}
-                    </span>
-                    <span className="player-name">{p.name}</span>
-                    <span className="player-role">{p.role}</span>
-                    <Ellipsis size={14} />
-                  </button>
+                      <span
+                        className="shirt-number"
+                        style={{
+                          color: p.role === "GK" ? "#f5c866" : team.color,
+                        }}
+                      >
+                        {p.number || "–"}
+                      </span>
+                      <span className="player-name">{p.name || p.role}</span>
+                      <span className="player-role">{p.role}</span>
+                    </button>
+                    <button
+                      className="swap-row-button"
+                      aria-label={`Substitute number ${p.number}`}
+                      title="Substitute this player"
+                      onClick={() => {
+                        setSelectedId(p.id);
+                        setDialog("substitution");
+                      }}
+                    >
+                      <ArrowLeftRight size={13} />
+                    </button>
+                  </div>
                 ))}
               </div>
               <div className="lineup-heading bench-heading">
-                <span>SUBSTITUTES</span>
-                <span>{bench.length}</span>
+                <span>SUBSTITUTES · {bench.length}</span>
+                <button
+                  className="sub-action-button"
+                  onClick={() => setDialog("substitution")}
+                >
+                  <ArrowLeftRight size={12} /> Substitute
+                </button>
               </div>
               <div className="player-list bench-list">
                 {bench.map((p) => (
                   <button
                     className={`player-row ${selectedId === p.id ? "selected" : ""}`}
                     key={p.id}
-                    onClick={() => setSelectedId(p.id)}
+                    onClick={() => {
+                      setSelectedId(p.id);
+                      setDialog("substitution");
+                    }}
                   >
                     <span className="shirt-number muted">
                       {p.number || "–"}
                     </span>
-                    <span className="player-name">{p.name}</span>
+                    <span className="player-name">{p.name || p.role}</span>
                     <span className="player-role">{p.role}</span>
                     <Plus size={13} />
                   </button>
@@ -1518,22 +1691,7 @@ export function App() {
               </div>
               <button
                 className="text-button add-player"
-                onClick={() => {
-                  if (scene.players.length >= 80)
-                    return notify("A scene supports up to 80 players.");
-                  const p: Player = {
-                    id: uid(),
-                    team: side,
-                    number: roster.length + 1,
-                    name: "New player",
-                    role: "MID",
-                    onPitch: false,
-                    x: 50,
-                    y: 50,
-                  };
-                  patchScene({ players: [...scene.players, p] });
-                  setSelectedId(p.id);
-                }}
+                onClick={addSubstitute}
               >
                 <Plus size={13} /> Add substitute
               </button>
@@ -1607,24 +1765,12 @@ export function App() {
                         : "Spotlight player"}
                     </button>
                   ) : (
-                    <label>
-                      Replace starting player
-                      <select
-                        aria-label="Substitute for player"
-                        value=""
-                        onChange={(e) => {
-                          if (e.target.value)
-                            substitute(e.target.value, selectedPlayer.id);
-                        }}
-                      >
-                        <option value="">Choose a player…</option>
-                        {onPitch.map((p) => (
-                          <option value={p.id} key={p.id}>
-                            {p.number} · {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <button
+                      className="button full small"
+                      onClick={() => setDialog("substitution")}
+                    >
+                      <ArrowLeftRight size={14} /> Choose substitution
+                    </button>
                   )}
                   {!selectedPlayer.onPitch && onPitch.length < 11 ? (
                     <button
@@ -1733,7 +1879,6 @@ export function App() {
                   rows={4}
                   value={scene.notes}
                   maxLength={4000}
-                  placeholder="Your talking points for this scene…"
                   onChange={(e) => patchScene({ notes: e.target.value })}
                 />
               </label>
@@ -1948,9 +2093,19 @@ export function App() {
           </button>
         </div>
       ) : null}
+      {dialog === "substitution" ? (
+        <SubstitutionDialog
+          scene={scene}
+          side={side}
+          selectedId={selectedId}
+          onSwap={substitute}
+          onClose={() => setDialog(null)}
+          onAdd={addSubstitute}
+        />
+      ) : null}
       {dialog === "match" ? (
         <Modal
-          title="The match starts here."
+          title="Matches"
           eyebrow="FOOTBALL DATA"
           wide
           onClose={() => setDialog(null)}
@@ -1963,7 +2118,7 @@ export function App() {
       ) : null}
       {dialog === "media" ? (
         <Modal
-          title="Every frame tells a story."
+          title="Media library"
           eyebrow="MEDIA LIBRARY"
           wide
           onClose={() => setDialog(null)}
@@ -1977,7 +2132,7 @@ export function App() {
             }}
           >
             <ImagePlus size={32} />
-            <h3>Bring the moment into focus.</h3>
+            <h3>Upload a picture or video</h3>
             <p>
               Drop match footage or stills here. Media is stored privately on
               this device.
@@ -2008,10 +2163,16 @@ export function App() {
                     patchScene({
                       mediaId: item.id,
                       background: "media",
-                      mediaTime: 0,
+                      mediaTime:
+                        scene.mediaId === item.id ? scene.mediaTime : 0,
+                      mediaTransform:
+                        scene.mediaId === item.id
+                          ? scene.mediaTransform
+                          : undefined,
                     });
                     setDialog(null);
                     setPlaying(false);
+                    setTool("media");
                   }}
                 >
                   {item.kind === "video" ? (
@@ -2035,7 +2196,7 @@ export function App() {
       ) : null}
       {dialog === "projects" ? (
         <Modal
-          title="Your analysis, ready to go."
+          title="Projects"
           eyebrow="PROJECT LIBRARY"
           wide
           onClose={() => setDialog(null)}
@@ -2135,7 +2296,7 @@ export function App() {
       ) : null}
       {dialog === "export" ? (
         <Modal
-          title="Take the analysis further."
+          title="Export analysis"
           eyebrow="EXPORT STUDIO"
           onClose={() => setDialog(null)}
         >
@@ -2185,7 +2346,7 @@ export function App() {
       ) : null}
       {dialog === "settings" ? (
         <Modal
-          title="Make the studio yours."
+          title="Project settings"
           eyebrow="PROJECT SETTINGS"
           onClose={() => setDialog(null)}
         >
@@ -2279,7 +2440,7 @@ export function App() {
       ) : null}
       {dialog === "help" ? (
         <Modal
-          title="Stay in the flow."
+          title="Keyboard shortcuts"
           eyebrow="STUDIO SHORTCUTS"
           onClose={() => setDialog(null)}
         >
@@ -2326,8 +2487,9 @@ export function App() {
           <div className="notice">
             <Lock size={19} />
             <p>
-              Cloud snapshots and football data use a secure server session.
-              Your tactical board and local media work without signing in.
+              Cloud snapshots use a secure server session. Public match
+              browsing, tactical editing and local media work without signing
+              in.
             </p>
           </div>
           {cloudStatus.authenticated ? (
@@ -2387,9 +2549,8 @@ export function App() {
             </p>
           ) : null}
           <p className="hint">
-            Deployment setup: configure STUDIO_PASSWORD and your licensed
-            FOOTBALL_API_KEY in this project’s Vercel environment settings.
-            Credentials are kept on the server.
+            Configure STUDIO_PASSWORD in Vercel to enable private cloud
+            snapshots. Match browsing does not need a password or API key.
           </p>
         </Modal>
       ) : null}

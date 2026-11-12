@@ -4,7 +4,7 @@ import type {
   OfficialMatch,
   OfficialPlayer,
 } from "../src/types";
-import { createProject } from "../src/lib/defaults";
+import { createProject, createScene } from "../src/lib/defaults";
 import { importOfficialMatch } from "../src/lib/match-import";
 import { validateProject } from "../src/lib/validation";
 
@@ -108,6 +108,7 @@ describe("official match import", () => {
     expect(players[0].id).not.toBe(source.lineups[0].starters[0].id);
     expect(result.officialMatch!.lineups[0].starters[0].number).toBeNull();
     expect(result.officialMatch!.lineups[0].status).toBe("provider-reported");
+    expect(result.scenes[0].showNames).toBe(true);
     expect(new Set(players.map((player) => player.id)).size).toBe(
       players.length,
     );
@@ -115,6 +116,7 @@ describe("official match import", () => {
 
   it("keeps provider facts immutable through later tactical edits", () => {
     const project = createProject();
+    project.scenes.push(createScene("Second scene"));
     const source = match([lineup("home"), lineup("away")]);
     const originalProject = structuredClone(project);
     const originalMatch = structuredClone(source);
@@ -184,6 +186,10 @@ describe("official match import", () => {
 
   it("is deterministic, preserves other scenes and rejects an unknown target", () => {
     const project = createProject();
+    project.scenes.push(
+      createScene("Second scene"),
+      createScene("Third scene"),
+    );
     const source = match([lineup("home")]);
     const first = importOfficialMatch(project, project.scenes[1], source);
     const second = importOfficialMatch(project, project.scenes[1], source);

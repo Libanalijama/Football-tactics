@@ -23,7 +23,11 @@ describe("project boundary validation", () => {
     project.scenes[0].players[0].x = Infinity;
     expect(() => validateProject(project)).toThrow();
     project.scenes[0].players[0].x = 10;
-    project.scenes[0].players[11].onPitch = true;
+    project.scenes[0].players.push({
+      ...project.scenes[0].players[0],
+      id: "twelfth-home-player",
+      onPitch: true,
+    });
     expect(() => validateProject(project)).toThrow("eleven starting players");
   });
   it("rejects duplicate and dangling scene identities", () => {

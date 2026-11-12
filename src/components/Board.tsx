@@ -6,6 +6,7 @@ import type {
 } from "react";
 import type {
   Annotation,
+  MediaTransform,
   Player,
   Point,
   Scene,
@@ -13,6 +14,14 @@ import type {
   Tool,
 } from "../types";
 import { clampPoint, playersAtTime } from "../lib/animation";
+import {
+  normalizeMediaTransform,
+  mediaPlacement,
+  mediaCssTransform,
+  panMedia,
+  resizeMedia,
+} from "../lib/media-transform";
+import { TacticalOverlays } from "./TacticalOverlays";
 
 export const PITCH = { x: 30, y: 30, width: 1140, height: 720 };
 export const toPitchPoint = (p: Point): Point => ({
@@ -61,10 +70,12 @@ export function AnnotationShape({
   annotation: a,
   selected = false,
   prefix = "annotation",
+  calibrated = true,
 }: {
   annotation: Annotation;
   selected?: boolean;
   prefix?: string;
+  calibrated?: boolean;
 }) {
   if (!a.points.length) return null;
   const p = a.points.map(toPitchPoint),
@@ -80,6 +91,128 @@ export function AnnotationShape({
     hatch = `${safeId}-hatch`;
   let shape;
   switch (a.type) {
+    case "heat": {
+      const gradient = `${safeId}-heat`;
+      shape = (
+        <>
+          <defs>
+            <radialGradient id={gradient}>
+              <stop offset="0" stopColor="#ff5041" stopOpacity=".85" />
+              <stop offset=".35" stopColor="#ffd946" stopOpacity=".75" />
+              <stop offset=".7" stopColor="#9ee642" stopOpacity=".4" />
+              <stop offset="1" stopColor="#60d75a" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <ellipse
+            cx={(first.x + last.x) / 2}
+            cy={(first.y + last.y) / 2}
+            rx={Math.max(30, width / 2)}
+            ry={Math.max(24, height / 2)}
+            fill={`url(#${gradient})`}
+          />
+        </>
+      );
+      break;
+    }
+    case "cone": {
+      const dx = last.x - first.x,
+        dy = last.y - first.y,
+        length = Math.max(1, Math.hypot(dx, dy)),
+        spread = Math.max(15, Math.min(110, length * 0.3));
+      const px = (-dy / length) * spread,
+        py = (dx / length) * spread,
+        gradient = `${safeId}-spotlight`;
+      shape = (
+        <>
+          <defs>
+            <linearGradient
+              id={gradient}
+              gradientUnits="userSpaceOnUse"
+              x1={first.x}
+              y1={first.y}
+              x2={last.x}
+              y2={last.y}
+            >
+              <stop stopColor={a.color} stopOpacity=".06" />
+              <stop offset="1" stopColor={a.color} stopOpacity=".26" />
+            </linearGradient>
+          </defs>
+          <polygon
+            points={`${first.x},${first.y} ${last.x + px},${last.y + py} ${last.x - px},${last.y - py}`}
+            fill={`url(#${gradient})`}
+            stroke={a.color}
+            strokeOpacity=".45"
+            strokeWidth={stroke * 0.5}
+          />
+          <circle cx={first.x} cy={first.y} r="4" fill={a.color} />
+        </>
+      );
+      break;
+    }
+    case "link":
+      shape = (
+        <>
+          <polygon
+            points={p.map((point) => `${point.x},${point.y}`).join(" ")}
+            fill={a.color}
+            fillOpacity={p.length > 2 ? ".1" : "0"}
+            stroke={a.color}
+            strokeWidth={stroke}
+            strokeLinejoin="round"
+          />
+          <circle cx={first.x} cy={first.y} r="4" fill={a.color} />
+          <circle cx={last.x} cy={last.y} r="4" fill={a.color} />
+        </>
+      );
+      break;
+    case "distance": {
+      const start = a.points[0],
+        end = a.points[a.points.length - 1],
+        distance = Math.hypot(
+          (end.x - start.x) * 1.05,
+          (end.y - start.y) * 0.68,
+        ),
+        label = calibrated ? `${distance.toFixed(1)} m` : "Guide";
+      const cx = (first.x + last.x) / 2,
+        cy = (first.y + last.y) / 2;
+      shape = (
+        <>
+          <line
+            x1={first.x}
+            y1={first.y}
+            x2={last.x}
+            y2={last.y}
+            stroke={a.color}
+            strokeWidth={stroke}
+            strokeDasharray="4 5"
+          />
+          <circle cx={first.x} cy={first.y} r="4" fill={a.color} />
+          <circle cx={last.x} cy={last.y} r="4" fill={a.color} />
+          <rect
+            x={cx - 38}
+            y={cy - 14}
+            width="76"
+            height="26"
+            rx="5"
+            fill="#101b20"
+            stroke={a.color}
+            strokeOpacity=".6"
+          />
+          <text
+            x={cx}
+            y={cy + 4}
+            textAnchor="middle"
+            fill={a.color}
+            fontFamily="Arial,sans-serif"
+            fontSize="12"
+            fontWeight="700"
+          >
+            {label}
+          </text>
+        </>
+      );
+      break;
+    }
     case "zone":
       shape = (
         <>
@@ -465,7 +598,7 @@ function PlayerToken({
           {p.number || "–"}
         </text>
       )}
-      {showNames && (
+      {showNames && p.name && (
         <g pointerEvents="none">
           <rect
             x={-Math.max(28, p.name.length * 3.3)}
@@ -494,7 +627,15 @@ function PlayerToken({
 type Gesture =
   | { kind: "player"; id: string; start: Point; scene: Scene }
   | { kind: "annotation"; id: string; start: Point; scene: Scene }
-  | { kind: "draw"; annotation: Annotation; scene: Scene };
+  | { kind: "draw"; annotation: Annotation; scene: Scene }
+  | { kind: "media"; start: Point; transform: MediaTransform; scene: Scene }
+  | {
+      kind: "media-resize";
+      start: Point;
+      transform: MediaTransform;
+      center: Point;
+      scene: Scene;
+    };
 export function Board({
   scene,
   home,
@@ -517,21 +658,33 @@ export function Board({
     svgRef = useRef<SVGSVGElement>(null),
     gesture = useRef<Gesture | null>(null);
   const [videoFailed, setVideoFailed] = useState(false);
-  useEffect(() => setVideoFailed(false), [mediaUrl]);
-  const [preview, setPreview] = useState<Scene | null>(null),
-    display = preview || scene,
+  const [sourceSize, setSourceSize] = useState({ width: 1200, height: 780 });
+  useEffect(() => {
+    setVideoFailed(false);
+    setSourceSize({ width: 1200, height: 780 });
+  }, [mediaUrl]);
+  const [preview, setPreview] = useState<Scene | null>(null);
+  const display = preview || scene,
     players = preview ? preview.players : playersAtTime(scene, time),
     isMedia = scene.background === "media";
+  const mediaTransform = normalizeMediaTransform(display.mediaTransform);
+  const placement = mediaPlacement(
+    sourceSize,
+    { width: 1200, height: 780 },
+    mediaTransform,
+  );
+  const mediaEditing =
+    interactive && isMedia && tool === "media" && !!mediaUrl && !videoFailed;
   const viewBox =
     scene.camera === "half" && !isMedia ? "0 0 630 780" : "0 0 1200 780";
-  const position = (e: ReactPointerEvent<SVGSVGElement>): Point => {
+  const svgPosition = (e: ReactPointerEvent<SVGSVGElement>): Point => {
     const matrix = svgRef.current?.getScreenCTM();
     return matrix
-      ? fromPitchPoint(
-          new DOMPoint(e.clientX, e.clientY).matrixTransform(matrix.inverse()),
-        )
-      : { x: 50, y: 50 };
+      ? new DOMPoint(e.clientX, e.clientY).matrixTransform(matrix.inverse())
+      : { x: 600, y: 390 };
   };
+  const position = (e: ReactPointerEvent<SVGSVGElement>): Point =>
+    fromPitchPoint(svgPosition(e));
   const finish = () => {
     if (!gesture.current) return;
     const next = preview;
@@ -543,13 +696,35 @@ export function Board({
     if (!interactive || e.button !== 0) return;
     e.preventDefault();
     const target = e.target as Element,
-      playerId = target
+      point = position(e);
+    if (tool === "media") {
+      if (!mediaEditing) return;
+      onGestureStart?.();
+      onSelect?.(null);
+      gesture.current = target.closest("[data-media-handle]")
+        ? {
+            kind: "media-resize",
+            start: svgPosition(e),
+            transform: mediaTransform,
+            center: placement.center,
+            scene,
+          }
+        : {
+            kind: "media",
+            start: svgPosition(e),
+            transform: mediaTransform,
+            scene,
+          };
+      setPreview(scene);
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
+    const playerId = target
         .closest("[data-player-id]")
         ?.getAttribute("data-player-id"),
       annotationId = target
         .closest("[data-annotation-id]")
-        ?.getAttribute("data-annotation-id"),
-      point = position(e);
+        ?.getAttribute("data-annotation-id");
     if (tool === "erase") {
       if (annotationId) {
         onGestureStart?.();
@@ -588,11 +763,24 @@ export function Board({
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
     const active = gesture.current;
     if (!active) return;
+    if (active.kind === "media" || active.kind === "media-resize") {
+      const next =
+        active.kind === "media"
+          ? panMedia(active.transform, active.start, svgPosition(e))
+          : resizeMedia(
+              active.transform,
+              active.start,
+              svgPosition(e),
+              active.center,
+            );
+      setPreview({ ...active.scene, mediaTransform: next });
+      return;
+    }
     const point = position(e);
     if (active.kind === "draw") {
       const a = active.annotation,
         points =
-          a.type === "freehand"
+          a.type === "freehand" || a.type === "link"
             ? [...a.points.slice(0, 3998), point]
             : [a.points[0], point];
       active.annotation = { ...a, points };
@@ -635,50 +823,78 @@ export function Board({
     isolation: "isolate",
     background: transparent ? "transparent" : isMedia ? "#000" : "#14251e",
   };
+  const basePlacement = mediaPlacement(
+    sourceSize,
+    { width: 1200, height: 780 },
+    { ...mediaTransform, x: 0, y: 0, scale: 1, rotation: 0 },
+  );
+  const mediaStyle: CSSProperties = {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: `${basePlacement.width / 12}%`,
+    height: `${basePlacement.height / 7.8}%`,
+    maxWidth: "none",
+    maxHeight: "none",
+    objectFit: "fill",
+    transform: "translate(-50%, -50%)",
+    pointerEvents: "none",
+    visibility: videoFailed ? "hidden" : "visible",
+  };
   return (
     <div
       className={`board-wrap${isMedia ? " board-media" : ""}`}
       style={style}
       data-testid="tactical-board"
     >
-      {isMedia &&
-        !transparent &&
-        mediaUrl &&
-        (videoRef ? (
-          <video
-            onError={() => setVideoFailed(true)}
-            ref={videoRef}
-            src={mediaUrl}
-            playsInline
-            muted
-            preload="auto"
-            onLoadedMetadata={(e) => {
-              if (Number.isFinite(scene.mediaTime))
-                e.currentTarget.currentTime = scene.mediaTime;
-            }}
-            style={{
-              position: "absolute",
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
-              visibility: videoFailed ? "hidden" : "visible",
-            }}
-          />
-        ) : (
-          <img
-            onError={() => setVideoFailed(true)}
-            src={mediaUrl}
-            alt="Analysis footage"
-            draggable={false}
-            style={{
-              position: "absolute",
-              width: "100%",
-              height: "100%",
-              objectFit: "contain",
-              visibility: videoFailed ? "hidden" : "visible",
-            }}
-          />
-        ))}
+      {isMedia && !transparent && mediaUrl && (
+        <div
+          data-testid="positioned-media-layer"
+          style={{
+            position: "absolute",
+            inset: 0,
+            transform: mediaCssTransform(mediaTransform),
+            transformOrigin: "50% 50%",
+            pointerEvents: "none",
+          }}
+        >
+          {videoRef ? (
+            <video
+              data-media-transform={JSON.stringify(mediaTransform)}
+              onError={() => setVideoFailed(true)}
+              ref={videoRef}
+              src={mediaUrl}
+              playsInline
+              muted
+              preload="auto"
+              onLoadedMetadata={(e) => {
+                setSourceSize({
+                  width: e.currentTarget.videoWidth,
+                  height: e.currentTarget.videoHeight,
+                });
+                if (Number.isFinite(scene.mediaTime))
+                  e.currentTarget.currentTime = scene.mediaTime;
+              }}
+              style={mediaStyle}
+            />
+          ) : (
+            <img
+              data-media-transform={JSON.stringify(mediaTransform)}
+              onError={() => setVideoFailed(true)}
+              onLoad={(e) =>
+                setSourceSize({
+                  width: e.currentTarget.naturalWidth,
+                  height: e.currentTarget.naturalHeight,
+                })
+              }
+              src={mediaUrl}
+              alt="Analysis footage"
+              draggable={false}
+              style={mediaStyle}
+            />
+          )}
+        </div>
+      )}
       {isMedia && !transparent && !mediaUrl && !cleanOutput && (
         <div
           style={{
@@ -738,7 +954,7 @@ export function Board({
           setPreview(null);
         }}
         onDoubleClick={(e) => {
-          if (!interactive) return;
+          if (!interactive || tool === "media") return;
           const annotationId = (e.target as Element)
               .closest("[data-annotation-id]")
               ?.getAttribute("data-annotation-id"),
@@ -768,11 +984,13 @@ export function Board({
           touchAction: interactive ? "none" : "auto",
           userSelect: "none",
           cursor: interactive
-            ? tool === "select"
-              ? "default"
-              : tool === "erase"
-                ? "not-allowed"
-                : "crosshair"
+            ? tool === "media"
+              ? "move"
+              : tool === "select"
+                ? "default"
+                : tool === "erase"
+                  ? "not-allowed"
+                  : "crosshair"
             : "default",
           visibility:
             cleanOutput && isMedia && (videoFailed || !mediaUrl)
@@ -790,6 +1008,16 @@ export function Board({
         {!isMedia && !transparent && (
           <Pitch theme={scene.pitchTheme} grid={scene.showGrid} prefix={id} />
         )}
+        {!isMedia && !transparent && (
+          <TacticalOverlays
+            scene={display}
+            players={players}
+            home={home}
+            away={away}
+            time={time}
+            selectedPlayerId={selectedId}
+          />
+        )}
         <g className="annotations">
           {display.annotations.map((a) => (
             <AnnotationShape
@@ -797,6 +1025,7 @@ export function Board({
               annotation={a}
               selected={interactive && selectedId === a.id}
               prefix={id}
+              calibrated={!isMedia}
             />
           ))}
         </g>
@@ -819,6 +1048,64 @@ export function Board({
                   }
                 />
               ))}
+          </g>
+        )}
+        {mediaEditing && (
+          <g
+            data-editor-only="true"
+            data-testid="media-transform-handles"
+            transform={`translate(${placement.center.x} ${placement.center.y}) rotate(${mediaTransform.rotation})`}
+          >
+            <rect
+              x={-placement.width / 2}
+              y={-placement.height / 2}
+              width={placement.width}
+              height={placement.height}
+              fill="none"
+              stroke="#c6f36b"
+              strokeWidth="1.8"
+              vectorEffect="non-scaling-stroke"
+              strokeDasharray="7 5"
+            />
+            {[
+              [-1, -1],
+              [1, -1],
+              [1, 1],
+              [-1, 1],
+            ].map(([x, y], index) => (
+              <rect
+                key={index}
+                data-media-handle={index}
+                x={(x * placement.width) / 2 - 7}
+                y={(y * placement.height) / 2 - 7}
+                width="14"
+                height="14"
+                rx="2"
+                fill="#c6f36b"
+                stroke="#112319"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+                style={{ cursor: index % 2 ? "nesw-resize" : "nwse-resize" }}
+              />
+            ))}
+            <rect
+              x="-62"
+              y={-placement.height / 2 - 31}
+              width="124"
+              height="23"
+              rx="4"
+              fill="#111b1b"
+            />
+            <text
+              x="0"
+              y={-placement.height / 2 - 15}
+              textAnchor="middle"
+              fill="#d4eda8"
+              fontSize="12"
+              fontFamily="Arial,sans-serif"
+            >
+              DRAG TO POSITION
+            </text>
           </g>
         )}
       </svg>

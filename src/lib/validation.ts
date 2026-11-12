@@ -46,6 +46,10 @@ const annotation = z
       "zone",
       "ellipse",
       "highlight",
+      "heat",
+      "cone",
+      "link",
+      "distance",
       "text",
     ]),
     points: z.array(point).min(1).max(4000),
@@ -59,6 +63,8 @@ const keyframe = z
     id,
     time: z.number().finite().min(0).max(600),
     positions: z.record(id, point),
+    ball: point.optional(),
+    ballCarrierId: id.optional(),
   })
   .strict();
 const scene = z
@@ -72,6 +78,16 @@ const scene = z
     duration: z.number().finite().min(0.1).max(600),
     mediaId: id.optional(),
     mediaTime: z.number().finite().min(0).max(86400),
+    mediaTransform: z
+      .object({
+        x: z.number().finite().min(-100).max(100),
+        y: z.number().finite().min(-100).max(100),
+        scale: z.number().finite().min(0.1).max(4),
+        rotation: z.number().finite().min(-180).max(180),
+        fit: z.enum(["contain", "cover"]),
+      })
+      .strict()
+      .optional(),
     background: z.enum(["pitch", "media"]),
     pitchTheme: z.enum(["stadium", "midnight"]),
     showNames: z.boolean(),
@@ -80,6 +96,21 @@ const scene = z
     camera: z.enum(["full", "half"]),
     notes: z.string().max(20000),
     sourceMatchId: id.optional(),
+    tactics: z
+      .object({
+        activeTeam: z.enum(["home", "away"]),
+        showShape: z.boolean(),
+        showDistances: z.boolean(),
+        showTrails: z.boolean(),
+        showLines: z.boolean(),
+        showBall: z.boolean(),
+        ball: point.extend({ carrierId: id.optional() }),
+        formation: z.string().max(32).optional(),
+        block: z.enum(["low", "mid", "high", "build-out", "custom"]).optional(),
+        lineGroups: z.array(z.array(id).max(11)).max(5).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -108,6 +139,14 @@ const scene = z
           message: "A team may have at most eleven starting players",
         });
     for (const frame of value.keyframes) {
+      if (
+        frame.ballCarrierId &&
+        !value.players.some((p) => p.id === frame.ballCarrierId)
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "Keyframe ball carrier refers to an unknown player",
+        });
       if (frame.time > value.duration)
         ctx.addIssue({
           code: "custom",
@@ -120,6 +159,22 @@ const scene = z
             message: "Keyframe refers to an unknown player",
           });
     }
+    if (
+      value.tactics?.ball.carrierId &&
+      !value.players.some((p) => p.id === value.tactics!.ball.carrierId)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Ball carrier refers to an unknown player",
+      });
+    for (const group of value.tactics?.lineGroups ?? [])
+      if (
+        group.some((playerId) => !value.players.some((p) => p.id === playerId))
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "Tactical line refers to an unknown player",
+        });
   });
 const team = z
   .object({

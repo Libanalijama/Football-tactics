@@ -1,78 +1,66 @@
 # Bang On Tactics
 
-A new football analysis studio for Bang On Sports. This repository is a greenfield application with its own architecture, tactical renderer and project format. It does not reuse an earlier tactics application or connect to another code repository.
+Football analysis and broadcast presentation for Bang On Sports. This independent application uses only Libanalijama/Football-tactics for its source.
 
-The studio combines an editable SVG tactical board, still/video telestration, saved scenes and a separate programme output. The dark operator workspace keeps the pitch central, with coral and ice-blue teams and a lime analysis accent. The attached design references informed the visual direction; no other broadcaster's graphics are included.
+## Start
 
-## Run the studio
+Use Node.js 22 or later.
 
-Use Node.js 22 or later and npm.
+    npm ci
+    npm run dev
 
-```sh
-npm ci
-npm run dev
-```
+The local server includes the public match-data route. Tactical editing, media, project saves and exports work without an account. Private cloud snapshots require the Vercel session/project functions.
 
-Open the local URL printed by Vite. Tactical editing, local media, local saves, imports/exports and same-browser programme output work without provider credentials. The development server serves the browser application only; it does **not** run `/api` server functions.
+## Match discovery — no key or account
 
-For authenticated cloud storage and live football data, use the Vercel development runtime after linking this repository to its own Vercel project and configuring the required server environment variables:
+Open Matches to load nearby Premier League fixtures automatically. Competition buttons include the Premier League, Champions League, LaLiga, Bundesliga, Serie A, Ligue 1, Championship and MLS. Choose recent/upcoming dates or filter the visible fixtures by club.
 
-```sh
-npx vercel link
-npx vercel env pull .env.local
-npx vercel dev
-```
+- ESPN public endpoints supply scores, available reported starting XIs, substitutes, formations and events without an API key.
+- The explicit Openfootball option supplies CC0 public-domain fixtures/results. It does not supply lineups.
+- Missing information stays unavailable. Importing a match creates an editable tactical copy while preserving the original provider record.
+- ESPN public access is not a grant of commercial broadcast or badge rights. The source selector and provider guide distinguish its terms from the CC0 fixture option. See [football-data.md](docs/football-data.md).
 
-Do not commit `.env.local` or copy credentials into client code. See [deployment requirements](#deployment) and [football provider setup](docs/football-data.md).
+## Shapes, actions and movement
 
-## Main workflows
+The Actions panel prepares low blocks, mid blocks, high presses and build-out shapes. Choose a formation, then drop, advance or shift a team by a measured distance, or narrow/widen the unit. Role-aware positioning mirrors correctly for home and away attacking directions.
 
-1. **Prepare a tactical scene.** Rename the project and scene, edit the manual home/away teams and players, choose a formation and drag players into position. Manage starters and substitutes without changing an imported official match snapshot.
-2. **Explain the play.** Draw movement arrows, dashed passes, curved arrows, freehand marks, hatched zones, ellipses, highlights and text. Select and reposition annotations; double-click text to edit it. Use undo/redo to revise work.
-3. **Animate movement.** Capture player positions at points on the scene timeline, move the playhead and capture the next shape. Playback interpolates positions between keyframes. Keep scene timing and editorial notes with the analysis.
-4. **Telestrate media.** Import a supported still or video, use it as the scene background, seek/pause footage and draw over it. Uploaded media stays in this browser's IndexedDB rather than being sent to a third party. Supported containers do not guarantee that every codec will play in every browser.
-5. **Prepare and present.** Select a scene in the operator workspace and take it to programme. Open `/output` for a clean picture or `/presenter` for scene controls and notes. The output receives an explicit programme snapshot, allowing preparation to continue separately. Keep both windows on the same deployment origin and in the same browser profile.
-6. **Keep and export work.** Save and reopen local projects; export/import validated `.bangontactics.json` files. Export a clean SVG or PNG and record browser-generated WebM animation where supported. Private cloud project snapshots are available after secure storage is configured.
-7. **Import real match data.** Connect API-Football on the server, search clubs or competitions, filter fixtures by date/season and load a match. Review the provider-reported team sheet before importing tactical players. Unavailable data stays unavailable; manual scenarios never masquerade as confirmed real teams.
+Select a player to give them the ball, carry forward, run or receive a pass. Actions automatically create start and finish keyframes. Team polygons, defensive lines, calibrated pitch distances, running trails and ball possession follow playback.
 
-Programme shortcuts: `F` enters fullscreen. In presenter mode, left/right arrows step scenes, Space toggles playback and `B` toggles blackout. The studio window must remain open to receive presenter commands.
+Movement step advances the timeline two seconds: drag players to the next position and the movement is captured automatically. Additional position keyframes remain available. Substitutions use a player-off/player-on chooser and preserve the playing position, defensive group and ball route.
 
-## Storage and portability
+New projects start with one scene and unnamed numbered manual tokens. No fake names, substitute lists or demonstration annotations are supplied. Earlier demonstration text is cleaned without removing custom work.
 
-The versioned project document contains scene structure, team settings, manual players, annotations, keyframes, media references and optional official match data. IndexedDB stores projects and source media locally; localStorage remembers the recent project and the latest programme snapshot. A browser failure or cleared site data can remove local work, so export backups for important productions.
+## Drawing, pictures and footage
 
-Project JSON exports and private cloud project saves contain **media metadata and references, not the source image/video bytes**. Keep original footage and reattach it on another browser/device. SVG exports contain vector graphics/annotations; PNG captures the current composite with loaded media. WebM recording is browser-generated and real-time; it does not mix or export source audio. It is not a server-rendered broadcast codec pipeline.
+Draw movement arrows, dashed passes, curved runs, freehand marks, hatched zones, ellipses, spotlights, text, vision cones, connected shapes, manual heat zones and distance guides. Pitch distances use 105 × 68 metres; footage guides are uncalibrated.
 
-Cloud snapshots use a **private Vercel Blob store** behind the studio session gate. This build does not provision a database subscription, Blob store, provider account or licensed football feed merely by being installed. It has no multi-user collaboration, per-user roles or concurrent-edit conflict resolution.
+Upload a still or video, seek footage and freeze a frame. Move pictures, drag corner handles to resize, zoom, rotate, fit/fill or reset. The studio, clean output and PNG/WebM exports share the same picture geometry. Fullscreen keeps tools, picture controls and uploads available.
+
+Media stays in this browser's IndexedDB. Supported playback depends on the browser's installed codecs. SVG uploads are excluded.
+
+## Programme, persistence and exports
+
+Take live publishes a separate scene snapshot to the clean output. Prepared edits remain off air until the next take. Presenter view supplies notes, scene stepping, play/pause and blackout. Keep operator, output and presenter windows on the same origin and browser profile on one computer.
+
+Local projects autosave. Export/import validated project JSON, clean SVG, high-resolution PNG or silent real-time WebM. JSON/cloud snapshots store media references rather than original footage. Reuploading the same original file reconnects its references and retains saved positions. Keep original files and exported backups.
+
+Private cloud snapshots use a connected private Vercel Blob store and a shared studio password. There is no remote production bus, multi-user collaboration or enterprise permission system.
 
 ## Deployment
 
-Create or link a Vercel project for **only** `Libanalijama/Football-tactics`. Framework: Vite. Build command: `npm run build`. Output directory: `dist`. The `api/` directory contains Node.js server functions; `vercel.json` routes `/output` and `/presenter` to the browser application.
+Vercel project: bang-on-tactics. Framework: Vite. Build: npm run build. Output: dist. Node.js: 24.
 
-Configure server-only variables as required:
+The public-football function requires no secret. For private cloud snapshots, configure STUDIO_PASSWORD and the private store connection BLOB_READ_WRITE_TOKEN or BLOB_STORE_ID. FOOTBALL_BADGES_LICENSED defaults to false.
 
-| Variable                                                                       | Purpose                                                                                                                    |
-| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `STUDIO_PASSWORD`                                                              | Shared studio password for protected server features. Use a long, unique value. Changing it invalidates existing sessions. |
-| `BLOB_READ_WRITE_TOKEN` or `BLOB_STORE_ID` with appropriate Vercel credentials | Access to the connected **private** Blob store for project snapshots. Never expose the token to the browser.               |
-| `FOOTBALL_API_KEY`                                                             | API-Football server credential. Required only for live provider requests.                                                  |
-| `FOOTBALL_PROVIDER`                                                            | Optional; currently `api-football` is the installed adapter.                                                               |
-| `FOOTBALL_BADGES_LICENSED`                                                     | Defaults to false. Only enable after the required visual-asset rights are cleared.                                         |
+The older optional API-Football adapter remains server-only and requires FOOTBALL_API_KEY plus a studio session. It is not used by the default match browser.
 
-Cloud endpoints return an explicit unavailable state when their prerequisites are absent. Local tactical work continues. Keep operator access protected in the deployment configuration. Authentication is a shared workspace password with a signed twelve-hour HttpOnly, SameSite cookie, same-origin mutation checks and per-instance login throttling; it is not an enterprise identity or permissions system.
+## Checks
 
-An API subscription does not automatically grant television, mass-media, competition, crest or player-photo publishing rights. API-Football's terms explicitly distinguish API access from publishing rights. Obtain the rights appropriate to Bang On Sports' distribution before using provider data or assets on air. See the [provider research and boundaries](docs/football-data.md).
+    npm run check
+    npm test
+    npm run build
+    npm run test:e2e
 
-## Verification
+Playwright uses installed Chrome on macOS and Chromium elsewhere. On Linux, install Chromium with npx playwright install --with-deps chromium.
 
-```sh
-npm run check
-npm test
-npm run build
-npx playwright install chromium
-npm run test:e2e
-```
-
-Unit and contract tests exercise pitch geometry, animation, safe project/media validation, provider normalization/failure handling and session/origin guards. Browser workflow tests verify the studio interactions available in the current build. The production build type-checks both the browser code and server functions. Real provider responses, deployed Blob permissions and broadcast capture performance still require validation in the configured production environment.
-
-See [architecture](docs/architecture.md) for component boundaries, data provenance and known limits.
+See [architecture](docs/architecture.md) and [verification](docs/verification.md) for boundaries and recorded evidence. Production capture, rights clearance and provider coverage still need checking for the broadcaster's intended use.

@@ -2,29 +2,23 @@ import type { Project, Scene, Player } from "../types";
 import { formationPositions } from "./formations";
 export const uid = () => crypto.randomUUID();
 function roster(): Player[] {
-  return (["home", "away"] as const).flatMap((team) => {
-    const points = formationPositions("4-3-3", team);
-    return Array.from({ length: 16 }, (_, i) => ({
+  return (["home", "away"] as const).flatMap((team) =>
+    formationPositions("4-3-3", team).map((point, i) => ({
       id: uid(),
       team,
       number: i + 1,
-      name:
-        i === 0
-          ? "Goalkeeper"
-          : i < 11
-            ? `Player ${i + 1}`
-            : `Substitute ${i - 10}`,
+      name: "",
       role: i === 0 ? "GK" : i < 5 ? "DEF" : i < 8 ? "MID" : "FWD",
-      onPitch: i < 11,
-      ...(points[i] ?? { x: 50, y: 50 }),
-    }));
-  });
+      onPitch: true,
+      ...point,
+    })),
+  );
 }
-export function createScene(name = "Untitled scene"): Scene {
+export function createScene(name = "Scene 1"): Scene {
   return {
     id: uid(),
     name,
-    subtitle: "Tactical analysis",
+    subtitle: "",
     players: roster(),
     annotations: [],
     keyframes: [],
@@ -32,7 +26,7 @@ export function createScene(name = "Untitled scene"): Scene {
     mediaTime: 0,
     background: "pitch",
     pitchTheme: "stadium",
-    showNames: true,
+    showNames: false,
     showNumbers: true,
     showGrid: false,
     camera: "full",
@@ -40,72 +34,84 @@ export function createScene(name = "Untitled scene"): Scene {
   };
 }
 export function createProject(): Project {
-  const base = createScene("The build-up");
-  base.subtitle = "Creating the overload";
-  base.notes = "Draw the press. Find the spare player. Explain the next pass.";
-  // All starting players are explicitly manual placeholders, never a fabricated real lineup.
-  base.annotations = [
-    {
-      id: uid(),
-      type: "zone",
-      points: [
-        { x: 48, y: 18 },
-        { x: 71, y: 81 },
-      ],
-      color: "#c6f36b",
-      width: 2,
-    },
-    {
-      id: uid(),
-      type: "arrow",
-      points: [
-        { x: 34, y: 50 },
-        { x: 57, y: 31 },
-      ],
-      color: "#c6f36b",
-      width: 3,
-    },
-    {
-      id: uid(),
-      type: "pass",
-      points: [
-        { x: 23, y: 60 },
-        { x: 49, y: 67 },
-      ],
-      color: "#ffffff",
-      width: 2,
-    },
-  ];
-  const second = structuredClone(base);
-  second.id = uid();
-  second.name = "Beat the press";
-  second.subtitle = "Play through the lines";
-  second.annotations = [];
-  const third = structuredClone(base);
-  third.id = uid();
-  third.name = "The final third";
-  third.subtitle = "Attack the space";
-  third.annotations = [];
+  const scene = createScene();
   return {
     version: 1,
     id: uid(),
-    name: "Untitled match analysis",
+    name: "Match analysis",
     updatedAt: new Date().toISOString(),
     home: {
-      name: "Home team",
+      name: "Home",
       shortName: "HOME",
       color: "#ef654d",
       formation: "4-3-3",
     },
     away: {
-      name: "Away team",
+      name: "Away",
       shortName: "AWAY",
       color: "#81b6fa",
       formation: "4-3-3",
     },
-    scenes: [base, second, third],
-    activeSceneId: base.id,
+    scenes: [scene],
+    activeSceneId: scene.id,
     assets: [],
     badgesCleared: false,
   };
+}
+export function removeDemoContent(project: Project): Project {
+  const next = structuredClone(project);
+  if (next.name === "Untitled match analysis") next.name = "Match analysis";
+  for (const [index, scene] of next.scenes.entries()) {
+    const demoScene =
+      ["The build-up", "Beat the press", "The final third"].includes(
+        scene.name,
+      ) && !scene.sourceMatchId;
+    scene.players = scene.players
+      .filter((p) => !(!p.onPitch && /^Substitute \d+$/.test(p.name)))
+      .map((p) => ({
+        ...p,
+        name:
+          /^Player \d+$|^Substitute \d+$|^New player$/.test(p.name) ||
+          p.name === "Goalkeeper"
+            ? ""
+            : p.name,
+      }));
+    if (demoScene) {
+      scene.name = "Scene " + (index + 1);
+      if (
+        [
+          "Creating the overload",
+          "Play through the lines",
+          "Attack the space",
+        ].includes(scene.subtitle)
+      )
+        scene.subtitle = "";
+      scene.annotations = scene.annotations.filter(
+        (a) =>
+          !(
+            (a.type === "zone" &&
+              a.points[0]?.x === 48 &&
+              a.points[0]?.y === 18 &&
+              a.points[1]?.x === 71 &&
+              a.points[1]?.y === 81) ||
+            (a.type === "arrow" &&
+              a.points[0]?.x === 34 &&
+              a.points[0]?.y === 50 &&
+              a.points[1]?.x === 57 &&
+              a.points[1]?.y === 31) ||
+            (a.type === "pass" &&
+              a.points[0]?.x === 23 &&
+              a.points[0]?.y === 60 &&
+              a.points[1]?.x === 49 &&
+              a.points[1]?.y === 67)
+          ),
+      );
+    }
+    if (
+      scene.notes ===
+      "Draw the press. Find the spare player. Explain the next pass."
+    )
+      scene.notes = "";
+  }
+  return next;
 }
